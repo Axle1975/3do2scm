@@ -1,4 +1,5 @@
 #include <iostream>
+#include <filesystem>
 #include <fstream>
 #include <map>
 #include <list>
@@ -265,7 +266,7 @@ void GetAllTextureNames(const rwe::_3do::Object& obj, std::set<std::string> &acc
 }
 
 
-std::shared_ptr<CompositeTexture> MakeTextures(const rwe::_3do::Object& obj)
+std::shared_ptr<CompositeTexture> MakeTextures(const rwe::_3do::Object& obj, const std::vector<std::string> &taDataDirs)
 {
     std::set<std::string> allTextures;
     GetAllTextureNames(obj, allTextures);
@@ -274,22 +275,16 @@ std::shared_ptr<CompositeTexture> MakeTextures(const rwe::_3do::Object& obj)
     std::list< std::shared_ptr<rwe::GafArchive> > gafs;
     std::map< std::string, std::shared_ptr<rwe::GafArchive> > gafByTextureName;
 
-    for (const std::string directory : { "D:\\temp\\totala1\\textures\\", "D:\\temp\\ccdata\\textures\\" })
+    for (const std::string tadata : taDataDirs)
     {
-        for (const std::string archive : {
-                "ARMBLDG.GAF",
-                "ARMCAMO.GAF",
-                "ARMSHIPS.GAF",
-                "ARMVEHIC.GAF",
-                "CORBLDG.GAF",
-                "CORCAMO.GAF",
-                "CORSHIPS.GAF",
-                "CORVEHIC.GAF",
-                "EXP1.GAF",
-                "LOGOS.GAF",
-                "WRECKAGE.GAF" })
+        const std::string directory = tadata + "\\textures";
+        for (const auto& dirEntry : std::filesystem::recursive_directory_iterator(directory))
         {
-            std::shared_ptr<std::ifstream> fs(new std::ifstream(directory + archive, std::ios_base::binary));
+            if (!dirEntry.is_regular_file())
+            {
+                continue;
+            }
+            std::shared_ptr<std::ifstream> fs(new std::ifstream(dirEntry, std::ios_base::binary));
             if (fs->good())
             {
                 std::shared_ptr<rwe::GafArchive> gaf(new rwe::GafArchive(fs.get()));
@@ -344,17 +339,23 @@ int main(int argc, char **argv)
 {
     if (argc < 3)
     {
-        std::cerr << "USAGE: " << argv[0] << " <unit name> <objects3d path 1> <objects3d path 2> ..." << std::endl;
-        std::cerr << "eg: " << argv[0] << " ARMACA_dead d:\\temp\\ccdata\\objects3d\\ d:\\temp\\totala1\\objects3d\\" << std::endl;
+        std::cerr << "USAGE: " << argv[0] << " <unit name> <tadata path 1> <tadata path 2> ..." << std::endl;
+        std::cerr << "eg: " << argv[0] << " ARMACA_dead d:\\temp\\ccdata d:\\temp\\totala1" << std::endl;
         return 1;
     }
 
     const std::string unitName = argv[1];
     std::vector<rwe::_3do::Object> _3doData;
 
-    for (int idxArg = 1; idxArg < argc; ++idxArg)
+    std::vector<std::string> taDataDirs;
+    for (int idxArg = 2; idxArg < argc; ++idxArg)
     {
-        const std::string objects3d(argv[idxArg]);
+        taDataDirs.push_back(argv[idxArg]);
+    }
+
+    for (const std::string &tadata: taDataDirs)
+    {
+        const std::string objects3d = tadata + "\\objects3d\\";
         std::ifstream fs(objects3d + unitName + ".3do", std::ios_base::binary);
         if (!fs.fail())
         {
@@ -368,7 +369,7 @@ int main(int argc, char **argv)
         std::cout << "{" << JsonKey(unitName) << "[";
         for (auto& obj : _3doData)
         {
-            std::shared_ptr<CompositeTexture> textures = MakeTextures(obj);
+            std::shared_ptr<CompositeTexture> textures = MakeTextures(obj, taDataDirs);
             {
                 std::ostringstream fn;
                 fn << unitName << "_Albedo" << textures->getWidth() << 'x' << textures->getHeight() << ".data";
