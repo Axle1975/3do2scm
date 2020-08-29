@@ -51,7 +51,6 @@ import struct
 import string
 import math
 from math import *
-import numpy
 
 from string import *
 from struct import *
@@ -638,7 +637,7 @@ def recursive_coordinate_transform(_3do_obj):
 if __name__ == "__main__":
 
     _3do_data = json.load(sys.stdin)
-    for k,v in _3do_data.iteritems():
+    for k,v in _3do_data.items():
         print("processing {}".format(k))
         recursive_coordinate_transform(v[0])
         supcom_mesh = make_scm(v[0])
