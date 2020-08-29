@@ -342,11 +342,19 @@ std::shared_ptr<CompositeTexture> MakeTextures(const rwe::_3do::Object& obj)
 
 int main(int argc, char **argv)
 {
+    if (argc < 3)
+    {
+        std::cerr << "USAGE: " << argv[0] << " <unit name> <objects3d path 1> <objects3d path 2> ..." << std::endl;
+        std::cerr << "eg: " << argv[0] << " ARMACA_dead d:\\temp\\ccdata\\objects3d\\ d:\\temp\\totala1\\objects3d\\" << std::endl;
+        return 1;
+    }
+
     const std::string unitName = argv[1];
     std::vector<rwe::_3do::Object> _3doData;
 
-    for (const std::string objects3d : { "d:\\temp\\ccdata\\objects3d\\", "d:\\temp\\totala1\\objects3d\\" })
+    for (int idxArg = 1; idxArg < argc; ++idxArg)
     {
+        const std::string objects3d(argv[idxArg]);
         std::ifstream fs(objects3d + unitName + ".3do", std::ios_base::binary);
         if (!fs.fail())
         {
@@ -375,5 +383,7 @@ int main(int argc, char **argv)
             }
         }
         std::cout << "]}";
+        return 0;
     }
+    return 1;
 }
