@@ -634,12 +634,16 @@ def recursive_coordinate_transform(_3do_obj):
         recursive_coordinate_transform(child)
 
 
-if __name__ == "__main__":
+def export(_3do_data):
 
-    _3do_data = json.load(sys.stdin)
     for k,v in _3do_data.items():
         print("processing {}".format(k))
         recursive_coordinate_transform(v[0])
         supcom_mesh = make_scm(v[0])
         supcom_mesh.save("{}_lod0.scm".format(k))
     print("Done!")
+
+
+if __name__ == "__main__":
+    _3do_data = json.load(sys.stdin)
+    export(_3do_data)
