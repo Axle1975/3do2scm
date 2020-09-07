@@ -488,23 +488,26 @@ class scm_mesh :
 def make_scm_bone(_3do_obj, parent_bone, parent_bone_index):
 
     name = _3do_obj["name"]
-    rotation = [1,0,0,0]
+    rel_rotation = [1,0,0,0]
 
-    position = [ _3do_obj[k] for k in ['x','y','z'] ]
+    rel_position = [ _3do_obj[k] for k in ['x','y','z'] ]
     if parent_bone is not None:
-        position = [ p+q for p,q in zip(position,parent_bone.position) ]
+        parent_abs_position = [ -x for x in parent_bone.rest_pose_inv[-1][0:3] ]
+        abs_position = [ p+q for p,q in zip(rel_position,parent_abs_position) ]
+    else:
+        abs_position = rel_position
 
     rest_pose = [[ 1, 0, 0, 0],
                  [ 0, 1, 0, 0],
                  [ 0, 0, 1, 0],
-                 [ position[0], position[1], position[2], 1]]
+                 [ abs_position[0], abs_position[1], abs_position[2], 1]]
 
     rest_pose_inv = [[ 1, 0, 0, 0],
                  [ 0, 1, 0, 0],
                  [ 0, 0, 1, 0],
-                 [ -position[0], -position[1], -position[2], 1]]
+                 [ -abs_position[0], -abs_position[1], -abs_position[2], 1]]
 
-    return scm_bone(name, rest_pose_inv, rotation, position, parent_bone_index)
+    return scm_bone(name, rest_pose_inv, rel_rotation, rel_position, parent_bone_index)
 
 
 def diff(x1,x2):
@@ -588,7 +591,7 @@ def recursive_append_3do(scm_mesh, _3do_obj, parent_bone, parent_bone_index):
     new_scm_bone = make_scm_bone(_3do_obj, parent_bone, parent_bone_index)
     scm_mesh.bones.append(new_scm_bone)
 
-    vertex_list = get_obj_vertices_list(_3do_obj["vertices"], new_scm_bone.position)
+    vertex_list = get_obj_vertices_list(_3do_obj["vertices"], [-x for x in new_scm_bone.rest_pose_inv[-1][0:3]])
 
     for _3do_primitive in _3do_obj["primitives"]:
         try:
