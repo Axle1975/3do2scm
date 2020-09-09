@@ -83,7 +83,8 @@ namespace rwe
         return _entries;
     }
 
-    GafArchive::GafArchive(std::istream* stream)
+    GafArchive::GafArchive(std::istream* stream, const std::string &archiveName):
+        _archiveName(archiveName)
     {
         auto header = readRaw<GafHeader>(*stream);
         if (header.version != GafVersionNumber)

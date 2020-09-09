@@ -12,10 +12,30 @@
 #include <scm/ScmFile_format.h>
 
 const double SCALE = 65536.0;
+static const std::string COLOR_INDEX_NAME_PREFIX("__colorIndex");
+
+std::string GetColorIndexName(unsigned colorIndex)
+{
+    std::ostringstream ss;
+    ss << COLOR_INDEX_NAME_PREFIX << colorIndex;
+    return ss.str();
+}
+
+bool IsColorIndexName(const std::string& name)
+{
+    return name.rfind(COLOR_INDEX_NAME_PREFIX, 0) == 0;
+}
+
+unsigned GetIndexFromColorIndexName(const std::string& name)
+{
+    return std::stoi(name.substr(COLOR_INDEX_NAME_PREFIX.size()));
+}
+
 
 class CompositeTexture : public rwe::GafReaderAdapter
 {
 public:
+
 
     class BufferFull : public std::runtime_error
     {
@@ -30,10 +50,18 @@ public:
         m_height(height),
         m_buffer(new char[width * height]),
         m_occupied(new char[width * height]),
-        m_currentTexture(NULL)
+        m_isLogo(new char[width * height]),
+        m_currentTexture(NULL),
+        m_currentTextureIsLogo(false)
     {
         std::memset(m_buffer.get(), 0, width * height);
         std::memset(m_occupied.get(), 0, width * height);
+        std::memset(m_isLogo.get(), 0, width * height);
+    }
+
+    virtual void setCurrentTextureIsLogo(bool isLogo)
+    {
+        m_currentTextureIsLogo = isLogo;
     }
 
     virtual void beginEntity(const std::string& name)
@@ -49,7 +77,7 @@ public:
 
     virtual void beginFrame(const rwe::GafFrameData& header)
     {
-        if (m_currentTexture->data == NULL)
+        if (m_currentTexture && m_currentTexture->data == NULL)
         {
             m_currentTexture->width = header.width;
             m_currentTexture->height = header.height;
@@ -74,6 +102,38 @@ public:
                     }
                 }
             }
+            // keep the first layer only
+            m_currentTexture = NULL;
+        }
+    }
+
+    virtual void addColorIndex(const std::string& colorIndexTextureName)
+    {
+        if (m_textures.count(colorIndexTextureName) > 0u)
+        {
+            return;
+        }
+
+        int colorIndex = GetIndexFromColorIndexName(colorIndexTextureName);
+        auto & tex = m_textures[colorIndexTextureName];
+        tex.width = 4;
+        tex.height = 4;
+        tex.transparencyKey = colorIndex-1u;
+        tex.data = NULL;
+        m_currentTextureIsLogo = false;
+
+        FindPlacement(tex);   // points tex.data to a free spot
+
+        for (unsigned col = 0; col < tex.width; ++col)
+        {
+            for (unsigned row = 0; row < tex.height; ++row)
+            {
+                unsigned idxDest = col + m_width * row;
+                if (idxDest + tex.x < m_width * m_height)
+                {
+                    tex.data[col + m_width * row] = colorIndex;
+                }
+            }
         }
     }
 
@@ -92,14 +152,22 @@ public:
         return m_height;
     }
 
-    const char* getBuffer() const
+    void saveTextures(std::ostream& os) const
     {
-        return m_buffer.get();
+        // raw colour indexed
+        os.write(m_buffer.get(), m_width * m_height);
     }
 
-    void save(std::ostream& os) const
+    void saveLogos(std::ostream& os) const
     {
-        os.write(m_buffer.get(), m_width * m_height);
+        // raw rgba
+        for (unsigned idx = 0u; idx < m_width * m_height; ++idx)
+        {
+            os.put(0);
+            os.put(0);
+            os.put(0);
+            os.put(m_isLogo.get()[idx] ? 255 : 0);
+        }
     }
 
     void getTextureUV(const std::string& name, double uvMin[2], double uvMax[2]) const
@@ -108,6 +176,7 @@ public:
         if (it == m_textures.end())
         {
             uvMin[0] = uvMin[1] = uvMax[0] = uvMax[1] = 0.0;
+            std::cerr << "unknown texture: '" << name << "'" << std::endl;
             return;
         }
 
@@ -123,9 +192,11 @@ private:
     const int m_height;
     std::shared_ptr<char> m_buffer;
     std::shared_ptr<char> m_occupied;
+    std::shared_ptr<char> m_isLogo;
 
     std::map< std::string, LayerData > m_textures;
     LayerData* m_currentTexture;
+    bool m_currentTextureIsLogo;
 
     bool IsOccupied(const LayerData& tex, bool markOccupied)
     {
@@ -137,6 +208,7 @@ private:
                 if (markOccupied)
                 {
                     m_occupied.get()[idx] = true;
+                    m_isLogo.get()[idx] = m_currentTextureIsLogo;
                 }
                 else if (idx >= m_width * m_height || m_occupied.get()[idx])
                 {
@@ -187,7 +259,10 @@ void ToJson(std::ostream& os, const rwe::_3do::Primitive& prim, const CompositeT
     os << '{';
     if (prim.colorIndex)
     {
+        const std::string colorIndexTextureName = GetColorIndexName(*prim.colorIndex);
         os << JsonKey("colorIndex") << *prim.colorIndex << ',';
+        os << JsonKey("colorIndexTextureName") << '"' << colorIndexTextureName << '"' << ',';
+        textures.getTextureUV(colorIndexTextureName, uvMin, uvMax);
     }
     if (prim.textureName)
     {
@@ -216,6 +291,10 @@ void ToJson(std::ostream& os, const rwe::_3do::Object& obj, const CompositeTextu
        << JsonKey("y") << double(obj.y) / SCALE << ','
        << JsonKey("z") << double(obj.z) / SCALE << ',';
     os << JsonKey("name") << '"' << obj.name << '"' << ',';
+    if (obj.selectionPrimitiveIndex)
+    {
+        os << JsonKey("selectionPrimitiveIndex") << *obj.selectionPrimitiveIndex << ',';
+    }
     os << JsonKey("vertices") << '[';
     for (const rwe::_3do::Vertex &vert : obj.vertices)
     {
@@ -257,6 +336,10 @@ void GetAllTextureNames(const rwe::_3do::Object& obj, std::set<std::string> &acc
         {
             accumulator.insert(*prim.textureName);
         }
+        else if (prim.colorIndex)
+        {
+            accumulator.insert(GetColorIndexName(*prim.colorIndex));
+        }
     }
 
     for (const auto& child : obj.children)
@@ -287,12 +370,13 @@ std::shared_ptr<CompositeTexture> MakeTextures(const rwe::_3do::Object& obj, con
             std::shared_ptr<std::ifstream> fs(new std::ifstream(dirEntry, std::ios_base::binary));
             if (fs->good())
             {
-                std::shared_ptr<rwe::GafArchive> gaf(new rwe::GafArchive(fs.get()));
+                std::shared_ptr<rwe::GafArchive> gaf(new rwe::GafArchive(fs.get(), dirEntry.path().string()));
 
                 for (const rwe::GafArchive::Entry& entry : gaf->entries())
                 {
-                    if (allTextures.count(entry.name) > 0)
+                    if (allTextures.count(entry.name)>0 && gafByTextureName.count(entry.name)==0u)
                     {
+                        std::cerr << "found texture:" << dirEntry << '/' << entry.name << std::endl;
                         gafByTextureName[entry.name] = gaf;
                     }
                 }
@@ -315,13 +399,26 @@ std::shared_ptr<CompositeTexture> MakeTextures(const rwe::_3do::Object& obj, con
                     auto it = gafByTextureName.find(tex);
                     if (it != gafByTextureName.end())
                     {
+                        // valid texture
                         auto entry = it->second->findEntry(tex);
                         if (entry)
                         {
                             textures->beginEntity(tex);
+
+                            // not sure how to correctly determine whether or not a gaf should be coloured by team colour.
+                            // we'll just make all gafs found in logos.gaf coloured by team.
+                            std::string archiveName = it->second->archiveName();
+                            std::transform(archiveName.begin(), archiveName.end(), archiveName.begin(), [](unsigned char c) { return std::tolower(c); });
+                            textures->setCurrentTextureIsLogo(archiveName.find("logos.gaf") != std::string::npos);
+
                             it->second->extract(*entry, *textures);
                             textures->endEntity();
                         }
+                    }
+                    else if (IsColorIndexName(tex))
+                    {
+                        // no texture by that name, but it does appear to be a color index
+                        textures->addColorIndex(tex);
                     }
                 }
                 return textures;
@@ -374,7 +471,13 @@ int main(int argc, char **argv)
                 std::ostringstream fn;
                 fn << unitName << "_Albedo" << textures->getWidth() << 'x' << textures->getHeight() << ".data";
                 std::ofstream fs(fn.str(), std::ios_base::binary);
-                textures->save(fs);
+                textures->saveTextures(fs);
+            }
+            {
+                std::ostringstream fn;
+                fn << unitName << "_SpecTeam" << textures->getWidth() << 'x' << textures->getHeight() << ".data";
+                std::ofstream fs(fn.str(), std::ios_base::binary);
+                textures->saveLogos(fs);
             }
 
             ToJson(std::cout, obj, *textures);

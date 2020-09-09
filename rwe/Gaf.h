@@ -114,11 +114,16 @@ namespace rwe
         };
 
     private:
+        const std::string _archiveName;
         std::vector<Entry> _entries;
         std::istream* _stream;
 
     public:
-        explicit GafArchive(std::istream* stream);
+        explicit GafArchive(std::istream* stream, const std::string &archiveName);
+
+        const std::string& archiveName() const {
+            return _archiveName;
+        }
 
         const std::vector<Entry>& entries() const;
 
