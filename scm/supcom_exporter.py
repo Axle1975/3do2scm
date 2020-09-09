@@ -208,6 +208,7 @@ class scm_vertex :
 
         file.write(vertex)
 
+
 #helper the real scm face 'tupel is stored in mesh
 #quad face
 class qFace :
@@ -554,9 +555,6 @@ def make_scm_face(object_vertex_list, face_vertex_indices, uvmin, uvmax, parent_
     umin,vmin = uvmin
     umax,vmax = uvmax
 
-    if len(face_vertex_indices) > 4:
-        face_vertex_indices = face_vertex_indices[0:4]
-
     if len(face_vertex_indices) == 4:
         new_scm_face = qFace()
         uv_list = [[umin,vmax], [umax,vmax], [umax,vmin], [umin,vmin]]
@@ -585,6 +583,20 @@ def recursive_count_faces(_3do_obj):
     return sum(children_face_count) + this_object_face_count
 
 
+def nfacet_to_quads_and_triangles(vertex_indices, new_facets=[]):
+
+    if len(vertex_indices)>4:
+        quad = [ vertex_indices[n] for n in (0,1,2,-1) ]
+        new_facets = new_facets + [quad]
+        return nfacet_to_quads_and_triangles(vertex_indices[2:], new_facets)
+
+    elif len(vertex_indices)>=3:
+        return new_facets + [ vertex_indices ]
+
+    else:
+        return new_facets
+
+
 def recursive_append_3do(scm_mesh, _3do_obj, parent_bone, parent_bone_index):
 
     new_bone_index = len(scm_mesh.bones)
@@ -598,8 +610,10 @@ def recursive_append_3do(scm_mesh, _3do_obj, parent_bone, parent_bone_index):
             vertex_indices = _3do_primitive["vertices"]
             uvmin = _3do_primitive["uvmin"]
             uvmax = _3do_primitive["uvmax"]
-            new_scm_face = make_scm_face(vertex_list, vertex_indices, uvmin, uvmax, new_bone_index)
-            new_scm_face.addToMesh(scm_mesh)
+
+            for facet in nfacet_to_quads_and_triangles(vertex_indices):
+                new_scm_face = make_scm_face(vertex_list, facet, uvmin, uvmax, new_bone_index)
+                new_scm_face.addToMesh(scm_mesh)
 
         except ValueError as e:
             print(repr(e))
@@ -613,7 +627,7 @@ def make_scm(_3do_obj):
     total_face_count = recursive_count_faces(_3do_obj)
     tileDimension = int(0.5+math.sqrt(total_face_count))
     supcom_mesh = scm_mesh()
-    recursive_append_3do(supcom_mesh, _3do_obj, None, 0)
+    recursive_append_3do(supcom_mesh, _3do_obj, None, -1)
     return supcom_mesh
 
 
@@ -641,6 +655,10 @@ def export(_3do_data):
 
     for k,v in _3do_data.items():
         print("processing {}".format(k))
+
+        # SCM file format technically doesn't require root bone to be named after unit, but SupCom engine does
+        v[0]["name"] = k
+
         recursive_coordinate_transform(v[0])
         supcom_mesh = make_scm(v[0])
         supcom_mesh.save("{}_lod0.scm".format(k))
