@@ -31,11 +31,80 @@ unsigned GetIndexFromColorIndexName(const std::string& name)
     return std::stoi(name.substr(COLOR_INDEX_NAME_PREFIX.size()));
 }
 
+std::vector<std::uint32_t> LoadPalette(const std::string &filename)
+{
+    std::ifstream file(filename, std::ios::binary | std::ios::ate);
+    std::streamsize size = file.tellg();
+    file.seekg(0, std::ios::beg);
+
+    std::vector<std::uint32_t> palette(size/4u);
+    file.read((char*)palette.data(), size);
+
+    return palette;
+}
+
+void rgb2hsv(std::uint8_t r, std::uint8_t g, std::uint8_t b, double& h, double& s, double& v)
+{
+    const double epsilon = 1e-6;
+    std::int16_t min = std::min(std::min(r,g),b);
+    std::int16_t max = std::max(std::max(r, g), b);
+    std::int16_t delta = max - min;
+
+    v = max;
+    if (delta == 0)
+    {
+        s = 0.0;
+        h = std::numeric_limits<double>::quiet_NaN();
+        return;
+    }
+
+    if (max > 0) {
+        s = double(delta) / double(max);
+    }
+    else {
+        // if max is 0, then r = g = b = 0              
+        // s = 0, h is undefined
+        s = 0.0;
+        h = std::numeric_limits<double>::quiet_NaN();
+        return;
+    }
+
+    if (r == max)
+    {
+        h = double(g - b) / double(delta);        // between yellow & magenta
+    }
+    else
+    {
+        if (g == max)
+        {
+            h = 2.0 + double(b - r) / double(delta);  // between cyan & yellow
+        }
+        else
+        {
+            h = 4.0 + double(r - g) / double(delta);  // between magenta & cyan
+        }
+    }
+
+    h *= 60.0;                              // degrees
+    if (h < 0.0)
+        h += 360.0;
+}
+
 
 class CompositeTexture : public rwe::GafReaderAdapter
 {
-public:
+    const int m_width;
+    const int m_height;
+    std::shared_ptr<char> m_buffer;
+    std::shared_ptr<char> m_occupied;
+    std::shared_ptr<char> m_isLogo;
+    std::vector<std::uint32_t> m_paletteRgba;
 
+    std::map< std::string, LayerData > m_textures;
+    LayerData* m_currentTexture;
+    bool m_currentTextureIsLogo;
+
+public:
 
     class BufferFull : public std::runtime_error
     {
@@ -45,7 +114,7 @@ public:
         { }
     };
 
-    CompositeTexture(int width, int height) :
+    CompositeTexture(int width, int height, const std::string &colourPalette) :
         m_width(width),
         m_height(height),
         m_buffer(new char[width * height]),
@@ -53,10 +122,12 @@ public:
         m_isLogo(new char[width * height]),
         m_currentTexture(NULL),
         m_currentTextureIsLogo(false)
+
     {
         std::memset(m_buffer.get(), 0, width * height);
         std::memset(m_occupied.get(), 0, width * height);
         std::memset(m_isLogo.get(), 0, width * height);
+        m_paletteRgba = LoadPalette(colourPalette);
     }
 
     virtual void setCurrentTextureIsLogo(bool isLogo)
@@ -152,10 +223,47 @@ public:
         return m_height;
     }
 
+    void colourLookup(std::uint8_t index, std::uint8_t& r, std::uint8_t& g, std::uint8_t& b) const
+    {
+        struct RGBA
+        {
+            std::uint8_t r;
+            std::uint8_t g;
+            std::uint8_t b;
+            std::uint8_t a;
+        };
+        union {
+            RGBA rgba;
+            std::uint32_t _word;
+        } word;
+
+        word._word = m_paletteRgba[index];
+        r = word.rgba.r;
+        g = word.rgba.g;
+        b = word.rgba.b;
+    }
+
     void saveTextures(std::ostream& os) const
     {
         // raw colour indexed
-        os.write(m_buffer.get(), m_width * m_height);
+        // raw rgba
+        for (unsigned idx = 0u; idx < m_width * m_height; ++idx)
+        {
+            std::uint8_t r, g, b;
+            double h, s, v;
+            colourLookup(m_buffer.get()[idx], r, g, b);
+            rgb2hsv(r, g, b, h, s, v);
+            bool isLogoPixel = this->m_isLogo.get()[idx] && s > 0.333;
+
+            if (isLogoPixel)
+            {
+                r = g = b = 0u;
+            }
+            os.put(r);
+            os.put(g);
+            os.put(b);
+            os.put(255);
+        }
     }
 
     void saveLogos(std::ostream& os) const
@@ -163,10 +271,16 @@ public:
         // raw rgba
         for (unsigned idx = 0u; idx < m_width * m_height; ++idx)
         {
+            std::uint8_t r, g, b;
+            double h, s, v;
+            colourLookup(m_buffer.get()[idx], r, g, b);
+            rgb2hsv(r, g, b, h, s, v);
+            bool isLogoPixel = this->m_isLogo.get()[idx] && s > 0.333;
+
             os.put(0);
             os.put(0);
             os.put(0);
-            os.put(m_isLogo.get()[idx] ? 255 : 0);
+            os.put(isLogoPixel ? 255-char(255.0*v) : 0);
         }
     }
 
@@ -188,16 +302,6 @@ public:
     }
 
 private:
-    const int m_width;
-    const int m_height;
-    std::shared_ptr<char> m_buffer;
-    std::shared_ptr<char> m_occupied;
-    std::shared_ptr<char> m_isLogo;
-
-    std::map< std::string, LayerData > m_textures;
-    LayerData* m_currentTexture;
-    bool m_currentTextureIsLogo;
-
     bool IsOccupied(const LayerData& tex, bool markOccupied)
     {
         for (unsigned int col = 0; col < tex.width; ++col)
@@ -393,7 +497,7 @@ std::shared_ptr<CompositeTexture> MakeTextures(const rwe::_3do::Object& obj, con
         {
             try
             {
-                std::shared_ptr<CompositeTexture> textures(new CompositeTexture(szx, szy));
+                std::shared_ptr<CompositeTexture> textures(new CompositeTexture(szx, szy, "PALETTE.PAL"));
                 for (const auto& tex : allTextures)
                 {
                     auto it = gafByTextureName.find(tex);
