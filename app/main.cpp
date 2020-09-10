@@ -366,7 +366,10 @@ void ToJson(std::ostream& os, const rwe::_3do::Primitive& prim, const CompositeT
         const std::string colorIndexTextureName = GetColorIndexName(*prim.colorIndex);
         os << JsonKey("colorIndex") << *prim.colorIndex << ',';
         os << JsonKey("colorIndexTextureName") << '"' << colorIndexTextureName << '"' << ',';
-        textures.getTextureUV(colorIndexTextureName, uvMin, uvMax);
+        if (!prim.textureName)
+        {
+            textures.getTextureUV(colorIndexTextureName, uvMin, uvMax);
+        }
     }
     if (prim.textureName)
     {
@@ -494,7 +497,7 @@ std::shared_ptr<CompositeTexture> MakeTextures(const rwe::_3do::Object& obj, con
 
     for (const std::string tadata : taDataDirs)
     {
-        const std::string directory = tadata + "\\textures";
+        std::filesystem::path directory = std::filesystem::path(tadata) / "textures";
         for (const auto& dirEntry : std::filesystem::recursive_directory_iterator(directory))
         {
             if (!dirEntry.is_regular_file())
@@ -510,7 +513,6 @@ std::shared_ptr<CompositeTexture> MakeTextures(const rwe::_3do::Object& obj, con
                 {
                     if (allTextures.count(entry.name)>0 && gafByTextureName.count(entry.name)==0u)
                     {
-                        //std::cerr << "found texture:" << dirEntry << '/' << entry.name << std::endl;
                         gafByTextureName[entry.name] = gaf;
                     }
                 }
@@ -527,7 +529,6 @@ std::shared_ptr<CompositeTexture> MakeTextures(const rwe::_3do::Object& obj, con
         std::filesystem::path candidate = std::filesystem::path(tadata) / "palettes" / "PALETTE.PAL";
         if (std::filesystem::exists(candidate))
         {
-            //std::cerr << "Found palette file: " << candidate.string() << std::endl;
             palettesFile = candidate;
             break;
         }
