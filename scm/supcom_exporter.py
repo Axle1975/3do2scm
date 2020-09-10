@@ -55,7 +55,9 @@ from math import *
 from string import *
 from struct import *
 
+import binascii
 import json
+import png
 import sys
 
 LOG_VERT = False
@@ -651,17 +653,39 @@ def recursive_coordinate_transform(_3do_obj):
         recursive_coordinate_transform(child)
 
 
+def save_png(filename, data, tex_dims):
+    w = png.Writer(size=tex_dims, greyscale=False, alpha=True, bitdepth=8)
+
+    rows = [ ]
+    n1,n2 = 0,tex_dims[0]
+    while 4*n1<len(data):
+        rows += [ data[(4*n1):(4*n2)] ]
+        n1,n2 = n2,n2+tex_dims[0]
+
+    with open(filename, "wb") as file:
+        w.write(file, rows)
+
+
 def export(_3do_data):
 
-    for k,v in _3do_data.items():
-        print("processing {}".format(k))
+    for unitname,data in _3do_data.items():
+        print("processing {}".format(unitname))
+        root = data[0]["root"]
+        tex_dims = data[0]["texture_dims"]
+        num_bytes = tex_dims[0]*tex_dims[1]*4
+        albedo = binascii.a2b_base64(data[0]["albedo"])[0:num_bytes]
+        specteam = binascii.a2b_base64(data[0]["specteam"])[0:num_bytes]
 
         # SCM file format technically doesn't require root bone to be named after unit, but SupCom engine does
-        v[0]["name"] = k
+        root["name"] = unitname
 
-        recursive_coordinate_transform(v[0])
-        supcom_mesh = make_scm(v[0])
-        supcom_mesh.save("{}_lod0.scm".format(k))
+        recursive_coordinate_transform(root)
+        supcom_mesh = make_scm(root)
+        supcom_mesh.save("{}_lod0.scm".format(unitname))
+
+        save_png("{}_Albedo.png".format(unitname), albedo, tex_dims)
+        save_png("{}_Specteam.png".format(unitname), specteam, tex_dims)
+
     print("Done!")
 
 

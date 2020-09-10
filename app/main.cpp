@@ -432,6 +432,36 @@ void ToJson(std::ostream& os, const rwe::_3do::Object& obj, const CompositeTextu
 }
 
 
+void base64encode(std::ostream& os, const std::string& s)
+{
+    const std::string base64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+    for (std::size_t n = 0u; n < s.size(); n += 3)
+    {
+        unsigned a = s[n];
+        unsigned b = n + 1 < s.size() ? s[n + 1] : 0;
+        unsigned c = n + 2 < s.size() ? s[n + 2] : 0;
+
+        unsigned w = (a & 0xfc) >> 2;
+        unsigned x = ((a & 0x03) << 4) | ((b & 0xf0) >> 4);
+        unsigned y = ((b & 0x0f) << 2) | ((c & 0xc0) >> 6);
+        unsigned z = c & 0x3f;
+
+        os.put(base64[w]);
+        os.put(base64[x]);
+        os.put(base64[y]);
+        os.put(base64[z]);
+    }
+}
+
+
+void ToJsonBinary(std::ostream& os, const std::string& s)
+{
+    os << '"';
+    base64encode(os, s);
+    os << '"';
+}
+
 void GetAllTextureNames(const rwe::_3do::Object& obj, std::set<std::string> &accumulator)
 {
     for (const auto &prim : obj.primitives)
@@ -587,20 +617,21 @@ int main(int argc, char **argv)
         for (auto& obj : _3doData)
         {
             std::shared_ptr<CompositeTexture> textures = MakeTextures(obj, taDataDirs);
+            std::ostringstream albedo, specteam;
             {
-                std::ostringstream fn;
-                fn << unitName << "_Albedo" << textures->getWidth() << 'x' << textures->getHeight() << ".data";
-                std::ofstream fs(fn.str(), std::ios_base::binary);
-                textures->saveTextures(fs);
-            }
-            {
-                std::ostringstream fn;
-                fn << unitName << "_SpecTeam" << textures->getWidth() << 'x' << textures->getHeight() << ".data";
-                std::ofstream fs(fn.str(), std::ios_base::binary);
-                textures->saveLogos(fs);
+                textures->saveTextures(albedo);
+                textures->saveLogos(specteam);
+
             }
 
+            std::cout << "{" << JsonKey("root");
             ToJson(std::cout, obj, *textures);
+            std::cout << ',' << JsonKey("albedo");
+            ToJsonBinary(std::cout, albedo.str());
+            std::cout << ',' << JsonKey("specteam");
+            ToJsonBinary(std::cout, specteam.str());
+            std::cout << ',' << JsonKey("texture_dims") << '[' << textures->getWidth() << ',' << textures->getHeight() << ']';
+            std::cout << "}";
             if (&obj != &_3doData.back())
             {
                 std::cout << ',';
