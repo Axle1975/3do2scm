@@ -32,7 +32,7 @@ class Piece:
 
     def turn_now(self, axis_idx, target):
         self.cur_rpw[-1][axis_idx] = self.cur_rpw[0][axis_idx] + target
-        self.vel_rpw[axis_idx] = 0.
+        self.rate_rpw[axis_idx] = 0.
         self.target_rpw[axis_idx] = self.cur_rpw[-1][axis_idx]
 
     def move_at_speed(self, axis_idx, target, speed):
