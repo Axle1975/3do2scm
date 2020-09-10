@@ -66,7 +66,23 @@ class Piece:
             self.cur_rpw[-1][n],self.rate_rpw[n] = update(self.cur_rpw[-1][n],self.rate_rpw[n],self.target_rpw[n],dt)
 
 
-def parse_cob(script, pieces, fps):
+def parse_nbos(script):
+    statements = []
+    vars = { }
+    for _statement in script.split(';'):
+        _statement = _statement.strip()
+        statement = _statement.replace(',', ' ')
+        statement = statement.replace('\n', ' ')
+        words = [w.lower() for w in statement.split(' ') if len(w)>0]
+        if len(words) == 0:
+            continue
+        statements += [words]
+        vars[words[0]] = _statement[len(words[0]):].strip()
+
+    return statements, vars
+
+
+def run_nbos(statements, pieces, fps):
     """
     @param script: string containing the (not)bos script
     @param pieces: dictionary of Piece objects
@@ -85,17 +101,13 @@ def parse_cob(script, pieces, fps):
         except ValueError:
             return float(number_str[1:-1])
 
-    for statement in script.split(';'):
-
-        statement = statement.strip()
-        statement = statement.replace(',', ' ')
-        statement = statement.replace('\n', ' ')
-        words = [w.lower() for w in statement.split(' ') if len(w)>0]
-        if len(words) == 0:
-            continue
+    for words in statements:
 
         if words[0] == 'scales':
             SCALE_FACTORS = [ to_float(w) for w in (words[1],words[2],words[3]) ]
+
+        elif words[0] == 'scm-file-path':
+            pass
 
         elif words[0] == 'move':
             name, axis, position, speed = words[1], str_to_axis_idx(words[3]), to_float(words[4]), words[5]
@@ -119,6 +131,9 @@ def parse_cob(script, pieces, fps):
                 while t > dt-1e-3:
                     piece.step(dt)
                     t -= dt
+
+        else:
+            raise ValueError("unknown nBOS command: '{}'".format(words[0]))
 
     return pieces
 
@@ -267,29 +282,62 @@ def to_sca(pieces, fps):
     return header + bone_names_section + bone_links_section + anim_data_head + anim_data
 
 
-if __name__ == "__main__":
-
-    import argparse
-    import scm.dumpscm
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--nbosfile', help='path to the .nbos (not)bos file containing the TA annimation script')
-    parser.add_argument('--scmfile', help='path to the existing file containing .scm supcom model associated with the script')
-    parser.add_argument('--scafile', help='path of the new supcom .sca animation file to create')
-    parser.add_argument('--fps', type=float, help='frames per second', default=30.)
-
-    args = parser.parse_args()
-
-    with open(args.scmfile, 'rb') as file:
+def construct_pieces(scm_filename):
+    with open(scm_filename, 'rb') as file:
         bones = scm.dumpscm.load_bones(file)
         pieces = {
             name: Piece(name, parent, xyz0, rpw0)
             for name,(parent,xyz0,wxyz0,rpw0) in bones.items()
         }
+    return pieces
 
-    with open(args.nbosfile, 'rt') as file:
-        script = file.read()
-        parse_cob(script, pieces, args.fps)
 
-    with open(args.scafile, 'wb') as file:
-        file.write(to_sca(pieces, args.fps))
+if __name__ == "__main__":
+
+    try:
+
+        import argparse
+        import scm.dumpscm
+        import traceback
+
+        parser = argparse.ArgumentParser()
+        parser.add_argument('nbosfiles', nargs='*', help='path to the .nbos (not)bos file(s) containing the TA annimation script')
+        parser.add_argument('--scmfile', help='path to the existing file containing .scm supcom model associated with the script. Overrides any "scm-file-path" statement in the nBOS file', default=None)
+        parser.add_argument('--scafile', help='path of the new supcom .sca animation file to create.  Default matches the nbosfile but with extension ".sca"', default=None)
+        parser.add_argument('--fps', type=float, help='frames per second.  default=30', default=30.)
+        args = parser.parse_args()
+
+        for nbosfile in args.nbosfiles:
+            print("NBOS script:{}".format(nbosfile))
+            with open(nbosfile, 'rt') as file:
+                script = file.read()
+            statements, vars = parse_nbos(script)
+
+            try:
+                # command line scm overrides scm-file-path directive in nbos file
+                scmfile = args.scmfile or vars['scm-file-path']
+            except KeyError:
+                # otherwise default look for scm with similar name/path as nbos file
+                scmfile = os.path.splitext(nbosfile)[0]+'.scm'
+
+            scmdir = os.path.dirname(scmfile)
+            nbosdir = os.path.dirname(nbosfile)
+            if scmdir=='' and nbosdir!='':
+                # prepend a path if required and available
+                scmfile = os.path.join(nbosdir,scmfile)
+
+            print("  SCM input:{}".format(scmfile))
+            pieces = construct_pieces(scmfile)
+            run_nbos(statements, pieces, args.fps)
+
+            scafile = args.scafile or os.path.splitext(nbosfile)[0]+'.sca'
+            print("  SCA output:{}".format(scafile))
+            with open(scafile, 'wb') as file:
+                file.write(to_sca(pieces, args.fps))
+
+    except:
+        traceback.print_exc()
+        input("Press Enter to continue ...")
+
+    else:
+        input("Press Enter to continue ...")
