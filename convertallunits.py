@@ -28,11 +28,11 @@ for fn in glob.glob(args.input_spec):
     
     for suffix in ("", "_dead"):
         try:
-            json_bytes = subprocess.check_output([args.converter_cmd, unit+suffix] + args.tadata_paths, stderr=subprocess.STDOUT, shell=True)
+            json_bytes = subprocess.check_output([args.converter_cmd, unit+suffix] + args.tadata_paths, stderr=None, shell=True)
             if json_bytes:
                 _3do_data = json.loads(json_bytes)
                 scm.supcom_exporter.export(_3do_data)
-        except subprocess.CalledProcessError:
+        except subprocess.CalledProcessError as e:
             print("Unable to convert model: {}".format(unit+suffix))
 
 os.chdir(cwd)

@@ -480,7 +480,7 @@ std::shared_ptr<CompositeTexture> MakeTextures(const rwe::_3do::Object& obj, con
                 {
                     if (allTextures.count(entry.name)>0 && gafByTextureName.count(entry.name)==0u)
                     {
-                        std::cerr << "found texture:" << dirEntry << '/' << entry.name << std::endl;
+                        //std::cerr << "found texture:" << dirEntry << '/' << entry.name << std::endl;
                         gafByTextureName[entry.name] = gaf;
                     }
                 }
@@ -491,13 +491,29 @@ std::shared_ptr<CompositeTexture> MakeTextures(const rwe::_3do::Object& obj, con
         }
     }
 
+    std::filesystem::path palettesFile;
+    for (const std::string tadata : taDataDirs)
+    {
+        std::filesystem::path candidate = std::filesystem::path(tadata) / "palettes" / "PALETTE.PAL";
+        if (std::filesystem::exists(candidate))
+        {
+            //std::cerr << "Found palette file: " << candidate.string() << std::endl;
+            palettesFile = candidate;
+            break;
+        }
+    }
+    if (!std::filesystem::exists(palettesFile))
+    {
+        throw std::runtime_error("Unable to find PALETTE.PAL");
+    }
+
     for (int szx = 64; szx <= 2048; szx *= 2)
     {
         for (int szy = szx; szy <= 2 * szx; szy *= 2)
         {
             try
             {
-                std::shared_ptr<CompositeTexture> textures(new CompositeTexture(szx, szy, "PALETTE.PAL"));
+                std::shared_ptr<CompositeTexture> textures(new CompositeTexture(szx, szy, palettesFile.string()));
                 for (const auto& tex : allTextures)
                 {
                     auto it = gafByTextureName.find(tex);
