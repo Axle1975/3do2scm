@@ -622,7 +622,6 @@ int main(int argc, char **argv)
             {
                 textures->saveTextures(albedo);
                 textures->saveLogos(specteam);
-
             }
 
             std::cout << "{" << JsonKey("root");
