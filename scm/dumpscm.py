@@ -24,7 +24,7 @@ def DumpVert(v,d):
 
 def quaternion_to_euler(q0,q1,q2,q3):
     yaw = math.atan2(2.*(q0*q3+q1*q2), 1.-2.*(q2*q2 + q3*q3))
-    pitch = math.asin(2.*(q0*q2-q3*q1))
+    pitch = math.asin(max(min(2.*(q0*q2-q3*q1),1.0),-1.0))
     roll = math.atan2(2.*(q0*q1+q2*q3), 1.-2.*(q1*q1 + q2*q2))
     return math.degrees(roll), math.degrees(pitch), math.degrees(yaw)
 
@@ -57,6 +57,9 @@ def load_bones(file):
     rawnames = struct.unpack(str(stop-start)+'s',data[start:stop])
 
     bonenames = rawnames[0].split(b'\0')[:-1]
+    while len(bonenames[-1]) == 0:
+        bonenames = bonenames[:-1]
+    bonecount = len(bonenames)
 
     bonestruct = '16f3f4f4i'
     bonesize = struct.calcsize(bonestruct)
@@ -65,7 +68,7 @@ def load_bones(file):
     for b in range(0,bonecount):
         bone = struct.unpack(bonestruct,data[start:stop])
         start,stop = stop,stop+bonesize
-        
+
         bonename = bonenames[b].decode('utf-8')
         parentname = "" if bone[24]==-1 else bonenames[bone[24]].decode('utf-8')
         pos_xyz = bone[16:19]
@@ -123,6 +126,10 @@ def DumpSCM(filename) :
 
     print( "\n*** BONE NAMES ***\n")
     bonenames = rawnames[0].split(b'\0')[:-1]
+    while len(bonenames[-1]) == 0:
+        bonenames = bonenames[:-1]
+    bonecount = len(bonenames)
+
     for b in range(0,len(bonenames)):
         print( "[%2d] %s" % (b,bonenames[b]))
 
