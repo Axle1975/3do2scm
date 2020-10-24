@@ -560,7 +560,7 @@ std::shared_ptr<CompositeTexture> MakeTextures(const rwe::_3do::Object& obj, con
                             // we'll just make all gafs found in logos.gaf coloured by team.
                             std::string archiveName = it->second->archiveName();
                             std::transform(archiveName.begin(), archiveName.end(), archiveName.begin(), [](unsigned char c) { return std::tolower(c); });
-                            textures->setCurrentTextureIsLogo(archiveName.find("logos.gaf") != std::string::npos);
+                            textures->setCurrentTextureIsLogo(archiveName.find("logo") != std::string::npos);
 
                             it->second->extract(*entry, *textures);
                             textures->endEntity();
