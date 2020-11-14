@@ -498,6 +498,10 @@ std::shared_ptr<CompositeTexture> MakeTextures(const rwe::_3do::Object& obj, con
     for (const std::string tadata : taDataDirs)
     {
         std::filesystem::path directory = std::filesystem::path(tadata) / "textures";
+        if (!std::filesystem::is_directory(directory))
+        {
+            continue;
+        }
         for (const auto& dirEntry : std::filesystem::recursive_directory_iterator(directory))
         {
             if (!dirEntry.is_regular_file())

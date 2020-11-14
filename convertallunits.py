@@ -33,6 +33,6 @@ for fn in glob.glob(args.input_spec):
                 _3do_data = json.loads(json_bytes)
                 scm.supcom_exporter.export(_3do_data)
         except subprocess.CalledProcessError as e:
-            print("Unable to convert model: {}".format(unit+suffix))
+            print("Unable to convert model {}: {}".format(unit+suffix, e))
 
 os.chdir(cwd)
